@@ -2,13 +2,14 @@ from fastapi import FastAPI, HTTPException
 from fastapi.exceptions import RequestValidationError
 
 from .schemas import (
-    KPIResponseSchema,
-    SchedulePostResponse,
+    ScheduleResponse,
     ScheduleRequest,
     ScheduleSuccessResponse,
 )
 from .validation_errors import request_validation_exception_handler
-
+from adapter.client_a import client_a_to_model
+from kpi.calculate import calculate_kpis
+from scheduler.mock import schedule_mock
 
 app = FastAPI(
     title="Harmony Job Scheduler API",
@@ -18,29 +19,27 @@ app.add_exception_handler(RequestValidationError, request_validation_exception_h
 
 @app.get("/health")
 def health_check():
-    return {"message": "ok"}
+    return {"status": "ok"}
 
 
-@app.post("/schedule", response_model=SchedulePostResponse)
-def create_schedule(request_payload: ScheduleRequest) -> SchedulePostResponse:
+@app.post("/schedule", response_model=ScheduleResponse)
+def create_schedule(request: ScheduleRequest) -> ScheduleResponse:
     try:
         # Step 0: Validate the request payload [Already handled by pydantic]
         # step 1: Transform the request payload into a format that can be used by the scheduler
+        model = client_a_to_model(request)
         # step 2: Call the scheduler
+        assignments = schedule_mock(model)
         # Step 3: Calculate the KPIs
+        kpis = calculate_kpis(assignments, model)
         # Step 4: return the response
+
         return ScheduleSuccessResponse(
             assignments=[],
-            kpis=KPIResponseSchema(
-                tardiness_minutes=0,
-                changeover_count=0,
-                changeover_minutes=0,
-                makespan_minutes=0,
-                utilization_pct={},
-            ),
+            kpis=kpis,
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn

@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Literal
+from typing import Literal, Union, Tuple, List, Dict
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 from typing_extensions import Self
@@ -18,18 +18,16 @@ class HorizonSchema(BaseModel):
 
 class ResourceSchema(BaseModel):
     id: str
-    capabilities: list[str]
-    calendar: list[list[datetime]]
+    capabilities: List[str]
+    calendar: List[Tuple[datetime, datetime]]
 
     @field_validator("calendar")
     @classmethod
-    def validate_calendar(cls, calendar: list[list[datetime]]) -> list[list[datetime]]:
+    def validate_calendar(cls, calendar: List[Tuple[datetime, datetime]]) -> List[Tuple[datetime, datetime]]:
         if len(calendar) == 0:
             raise ValueError("calendar must be non-empty")
-        for interval in calendar:
-            if len(interval) != 2:
-                raise ValueError("interval must be a list of two datetime objects")
-            if interval[0] >= interval[1]:
+        for start, end in calendar:
+            if start >= end:
                 raise ValueError("interval start must be before end")
         return calendar
 
@@ -57,7 +55,7 @@ class ProductSchema(BaseModel):
     id: str
     family: str
     due: datetime
-    route: list[RouteSchema] = Field(min_length=1)
+    route: List[RouteSchema] = Field(min_length=1)
 
 
 class SettingsSchema(BaseModel):
@@ -92,7 +90,7 @@ class KPIResponseSchema(BaseModel):
     changeover_count: int
     changeover_minutes: int
     makespan_minutes: int
-    utilization_pct: dict[str, int]
+    utilization_pct: Dict[str, int]
 
 class ScheduleRequest(BaseModel):
     horizon: HorizonSchema
@@ -100,6 +98,20 @@ class ScheduleRequest(BaseModel):
     changeover_matrix_minutes: ChangeoverMatrixMinutesSchema
     products: list[ProductSchema]
     settings: SettingsSchema
+
+    @model_validator(mode="after")
+    def validate_schedule_request(self) -> Self:
+        # calendar should be in the range of the horizon
+        for resource in self.resources:
+            for start, end in resource.calendar:
+                if start < self.horizon.start or end > self.horizon.end:
+                    raise ValueError("calendar must be in the range of the horizon")
+        # products should be in the range of the horizon
+        for product in self.products:
+            if product.due < self.horizon.start or product.due > self.horizon.end:
+                raise ValueError("due date must be in the range of the horizon")
+
+        return self
 
 
 class ScheduleSuccessResponse(BaseModel):
@@ -109,7 +121,7 @@ class ScheduleSuccessResponse(BaseModel):
 
 class ScheduleInfeasibleResponse(BaseModel):
     error: Literal["infeasible"]
-    why: list[str] = Field(min_length=1)
+    why: List[str] = Field(min_length=1)
 
 
-SchedulePostResponse = ScheduleSuccessResponse | ScheduleInfeasibleResponse
+ScheduleResponse = Union[ScheduleSuccessResponse, ScheduleInfeasibleResponse]
