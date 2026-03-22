@@ -1,0 +1,31 @@
+=== Input ===
+{
+  "horizon": { "start": "2025-11-03T08:00:00", "end": "2025-11-03T16:00:00" },
+  "resources": [
+    { "id": "Fill-1", "capabilities": ["fill"], "calendar": [["2025-11-03T08:00:00", "2025-11-03T16:00:00"]] },
+    { "id": "Label-1", "capabilities": ["label"], "calendar": [["2025-11-03T08:00:00", "2025-11-03T16:00:00"]] }
+  ],
+  "changeover_matrix_minutes": { "values": { "standard->standard": 0 } },
+  "products": [
+    {
+      "id": "P-100",
+      "family": "standard",
+      "due": "2025-11-03T16:00:00",
+      "route": [
+        { "capability": "fill", "duration_minutes": 300 },
+        { "capability": "label", "duration_minutes": 200 }
+      ]
+    }
+  ],
+  "settings": { "time_limit_seconds": 30, "objective_mode": "min_tardiness" }
+}
+
+=== OUTPUT ===
+=== ERROR RESPONSE (text) ===
+{
+    "error": "infeasible",
+    "why": [
+        "No resources remain available within the horizon while jobs still need scheduling.",
+        "Job P-100's label step was not scheduled because no resources with that capability were available."
+    ]
+}

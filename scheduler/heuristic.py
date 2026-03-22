@@ -75,7 +75,7 @@ def _machine_has_current_candidates(
     job_tracker: Dict[str, Dict[str, Any]],
 ) -> bool:
     """
-    True if this machine can run at least one step (current or later) of some job.
+    True if this machine can run at least one step (current) of some job.
     """
     caps = machine_tracker[machine_id]["capabilities"]
     for jt in job_tracker.values():
@@ -150,15 +150,35 @@ def _worst_case_changeover(model: Model) -> int:
     return max(max(v.values()) for v in model.changeover.values())
 
 
+def _objective_score(
+    *,
+    objective_mode: str,
+    due: int,
+    estimated_completion: int,
+) -> int:
+    """
+    Score a candidate job for selection.
+    Lower score is considered better.
+    Keeping this isolated makes it easy to add objective modes later.
+    """
+    if objective_mode == "min_tardiness":
+        return due - estimated_completion
+    return due
+
+
 def _get_next_ready_job_for_machine(
     job_tracker: Dict[str, Dict[str, Any]],
     machine_id: str,
     machine_tracker: Dict[str, Dict[str, Any]],
     model: Model,
 ) -> tuple[Optional[str], Optional[int]]:
+    """
+    Helper function to get the next ready job for a machine. Returns the job id and the start time of the best job.
+    """
     caps = machine_tracker[machine_id]["capabilities"]
     candidates: List[str] = []
     # We get the job id of the jobs whose current step capability is in the machine's capabilities.
+    # this will filter out jobs that are not compatible with the machine's capabilities.
     for job_id, jt in job_tracker.items():
         index: int = jt["current_step_index"]
         steps: List[Step] = jt["steps"]
@@ -180,6 +200,7 @@ def _get_next_ready_job_for_machine(
     start_time = 0
     worst_setup = _worst_case_changeover(model)
 
+    # We iterate over the candidates and find the best job.
     for job_id in sorted(candidates):
         job = job_tracker[job_id]
         fam = job["family"]
@@ -188,6 +209,7 @@ def _get_next_ready_job_for_machine(
         job_ready: int = job["next_available"]
         duration = job["steps"][job["current_step_index"]].duration
 
+        # We find the earliest operation start time such that the operation can be scheduled on the machine for this job.
         earliest_in_windows = _earliest_op_start_in_windows(
             machine["intervals"],
             machine_free,
@@ -196,6 +218,7 @@ def _get_next_ready_job_for_machine(
             duration,
         )
         if earliest_in_windows is None:
+            # If the operation cannot be scheduled on the machine, we skip this job.
             continue
 
         current_index = job["current_step_index"]
@@ -205,11 +228,15 @@ def _get_next_ready_job_for_machine(
         future_padding = max(0, len(remaining_steps) - 1) * worst_setup
         estimated_completion = earliest_in_windows + remaining_time + future_padding
 
-        if model.settings.objective_mode == "min_tardiness":
-            score = job["due"] - estimated_completion
-        else:
-            score = job["due"]
+        # We calculate the score for this job based on the objective mode. 
+        # this is where we enforce the objective mode.
+        score = _objective_score(
+            objective_mode=model.settings.objective_mode,
+            due=job["due"],
+            estimated_completion=estimated_completion,
+        )
 
+        # We find the best job based on the score. Lower score is better.
         if score < best_score:
             best_score = score
             best_job = job_id
@@ -225,8 +252,12 @@ def _get_next_ready_job_for_machine(
 
 
 def heuristic_schedule(model: Model) -> List[Assignment]:
+    """
+    Heuristic schedule the jobs in the model. Returns a list of assignments.
+    """
     horizon_span = model.horizon_end - model.horizon_start
 
+    # 1. Initialize machine tracker (track the next available time for each machine)
     machine_tracker: Dict[str, Dict[str, Any]] = {
         resource.id: {
             "current_family": None,
@@ -237,6 +268,7 @@ def heuristic_schedule(model: Model) -> List[Assignment]:
         for resource in model.resources
     }
 
+    # 2. Initialize job tracker (track the next available time for each job)
     job_tracker: Dict[str, Dict[str, Any]] = {
         job.id: {
             "current_step_index": 0,
@@ -248,26 +280,39 @@ def heuristic_schedule(model: Model) -> List[Assignment]:
         for job in model.jobs
     }
 
+    # 3. Initialize assignments list, this is our return value
     assignments: List[Assignment] = []
     total_steps = sum(len(job.steps) for job in model.jobs)
 
+    # 4. Main loop: while we have not scheduled all the steps, we need to find the next available machine and schedule the next job
     while len(assignments) < total_steps:
+        # 4.1. Find the next available machine
         machine_id = _get_next_available_machine(machine_tracker)
         if machine_id is None:
+            # 4.1.1. If no machine is available, we need to raise an infeasible error
+            remaining_tasks = []
+            for job_id, job in job_tracker.items():
+                index = job["current_step_index"]
+                remaining_tasks.append(f"Job {job_id}'s {job['steps'][index].capability} step was not scheduled because no resources with that capability were available.")
             raise InfeasibleError(
                 [
                     "No resources remain available within the horizon while jobs still need scheduling.",
-                    "Check calendars, capabilities, and horizon length.",
+                    f"\n".join(remaining_tasks),
                 ]
             )
 
+        # 4.2. Find the next ready job for the machine
+        # Meat of the logic lies here. In the below function. This is enforces rules for job dispatching/selection.
         job_id, start_time = _get_next_ready_job_for_machine(
             job_tracker, machine_id, machine_tracker, model
         )
         if job_id is None or start_time is None:
+            # 4.2.1. If no job is ready for the machine, we need to advance the machine to the next available time
+            # We check if the machine has any current candidates to run on it but was not scheduled. Maybe because of the time window constraint this is one of the possible reasons.
             had_candidates = _machine_has_current_candidates(
                 machine_id, machine_tracker, job_tracker
             )
+            # We advance the machine to the next available time
             new_t = _advance_machine_when_idle(
                 machine_id,
                 machine_tracker,
@@ -275,11 +320,12 @@ def heuristic_schedule(model: Model) -> List[Assignment]:
                 horizon_span,
                 had_candidates=had_candidates,
             )
+            # We update the machine's next available time
             machine_tracker[machine_id]["next_available"] = new_t
             if new_t >= horizon_span:
                 del machine_tracker[machine_id]
             continue
-
+        # 4.3. Schedule the job
         job = job_tracker[job_id]
         machine = machine_tracker[machine_id]
         index: int = job["current_step_index"]
@@ -289,10 +335,11 @@ def heuristic_schedule(model: Model) -> List[Assignment]:
         if end > horizon_span:
             raise InfeasibleError(
                 [
-                    f"Operation for product {job_id} step {index + 1} would end after the horizon end time.",
+                    f"Operation for job {job_id}'s {step.capability} step would end after the horizon end time.",
                 ]
             )
 
+        # 4.3.1. Append the assignment to the assignments list
         assignments.append(
             Assignment(
                 product=job_id,
@@ -304,6 +351,7 @@ def heuristic_schedule(model: Model) -> List[Assignment]:
             )
         )
 
+        # 4.3. Update the machine and job trackers
         machine["next_available"] = end
         machine["current_family"] = job["family"]
         job["next_available"] = end
@@ -313,4 +361,5 @@ def heuristic_schedule(model: Model) -> List[Assignment]:
         if job["current_step_index"] == len(job["steps"]):
             del job_tracker[job_id]
 
+    # 5. Return the assignments list
     return assignments

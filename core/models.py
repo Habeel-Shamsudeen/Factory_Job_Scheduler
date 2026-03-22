@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Literal
 
 @dataclass
 class Step:
@@ -33,7 +33,7 @@ class Assignment:
 @dataclass
 class Settings:
     time_limit_seconds: int
-    objective_mode: str
+    objective_mode: Literal['min_tardiness']
 
 
 @dataclass

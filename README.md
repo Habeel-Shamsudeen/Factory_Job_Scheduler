@@ -134,14 +134,35 @@ Run from repository root:
 python -m pytest tests/ -v
 ```
 
+Run tests via Docker:
+
+```bash
+docker build -f dockerfile -t harmony-scheduler .
+docker run --rm harmony-scheduler python -m pytest tests/ -v
+```
+
+Note: API tests use `fastapi.testclient` and require `httpx` to be installed in the image.
+
 Current tests cover:
 
 - scheduler invariants (`tests/support.py` + `tests/test_scheduler.py`)
 - KPI recomputation check
 - infeasible scheduler behavior
 - determinism (same input -> same output ordering)
-- API success path
-- API infeasible response shape
+
+## Simple visualization
+
+Added a tiny text visualization that prints a per-resource timeline and KPI snapshot.
+
+Reference visualization outputs are checked in here:
+
+- `outputs/sample_1.txt`
+- `outputs/sample_2.txt`
+- `outputs/sample_3.txt`
+- `outputs/sample_error.txt`
+
+These files are sample artifacts for demonstration (not auto-generated on every request).
+
 
 ## Assumptions I made
 

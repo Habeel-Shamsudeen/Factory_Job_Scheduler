@@ -4,6 +4,10 @@ from core.models import Assignment, KPIResult, Model
 
 
 def _calculate_tardiness_minutes(assignments: List[Assignment], model: Model) -> int:
+    """
+    Calculate the tardiness minutes for the assignments.
+    sum of max(0, completion - due) across products
+    """
     tardiness_minutes = 0
 
     for job in model.jobs:
@@ -19,6 +23,11 @@ def _calculate_tardiness_minutes(assignments: List[Assignment], model: Model) ->
 def _calculate_changeover_stats(
     assignments: List[Assignment], model: Model
 ) -> Tuple[int, int]:
+    """
+    Calculate the changeover count and changeover minutes for the assignments.
+    changeover count: number of family transitions on each resource sequence
+    changeover minutes: summed matrix setup minutes for those transitions
+    """
     changeover_count = 0
     changeover_minutes = 0
     family_mapping = {job.id: job.family for job in model.jobs}
@@ -38,6 +47,10 @@ def _calculate_changeover_stats(
 
 
 def _calculate_makespan_minutes(assignments: List[Assignment], model: Model) -> int:
+    """
+    Calculate the makespan minutes for the assignments.
+    makespan minutes: max(end) - min(start) across assignments
+    """
     if not assignments:
         return 0
     earliest_start = min(a.start for a in assignments)
@@ -48,6 +61,11 @@ def _calculate_makespan_minutes(assignments: List[Assignment], model: Model) -> 
 def _calculate_utilization_pct(
     assignments: List[Assignment], model: Model
 ) -> Dict[str, int]:
+    """
+    Calculate the utilization percentage for the assignments.
+    utilization percentage: processing minutes / total calendar minutes * 100
+    exclude changeover minutes
+    """
     utilization_pct: Dict[str, int] = {}
 
     for resource in model.resources:
@@ -68,13 +86,24 @@ def _calculate_utilization_pct(
 
 
 def calculate_kpis(assignments: List[Assignment], model: Model) -> KPIResult:
+    """
+    Calculate the KPIs for the assignments.
+    """
+    # 1. Calculate the tardiness minutes
     tardiness_minutes = _calculate_tardiness_minutes(assignments, model)
+
+    # 2. Calculate the changeover count and changeover minutes
     changeover_count, changeover_minutes = _calculate_changeover_stats(
         assignments, model
     )
+
+    # 3. Calculate the makespan minutes
     makespan_minutes = _calculate_makespan_minutes(assignments, model)
+
+    # 4. Calculate the utilization percentage
     utilization_pct = _calculate_utilization_pct(assignments, model)
 
+    # 5. Return the KPIs scores
     return KPIResult(
         tardiness_minutes=tardiness_minutes,
         changeover_count=changeover_count,

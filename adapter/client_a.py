@@ -6,10 +6,15 @@ def _to_minutes(start_dt: datetime, dt: datetime) -> int:
     return int((dt - start_dt).total_seconds() / 60)
 
 def client_a_to_model(request: ScheduleRequest) -> Model:
+    """
+    Convert the request from Client A to the canonical internal model. Transforms Client A request to the canonical internal model.
+    """
+    # 1. Mapping: Horizon -> horizon_start and horizon_end (convert horizon to minutes)
     start_dt = request.horizon.start
     horizon_start = 0
     horizon_end = _to_minutes(start_dt, request.horizon.end)
     
+    # 2. Mapping: Resources -> Internal Resources 
     resources = []
     for resource in request.resources:
         windows = [
@@ -25,11 +30,13 @@ def client_a_to_model(request: ScheduleRequest) -> Model:
             windows=windows,
         ))
     
+    # 3. Mapping: Changeover Matrix -> Internal changeover
     changeover = {}
     for key, cost in request.changeover_matrix_minutes.values.items():
         family1, family2 = key.split("->")
         changeover.setdefault(family1, {})[family2] = cost
     
+    # 4. Mapping: Products -> Internal Jobs
     jobs = []
     for product in request.products:
         steps = [
@@ -46,11 +53,13 @@ def client_a_to_model(request: ScheduleRequest) -> Model:
             steps=steps,
         ))
     
+    # 5. Mapping: Settings -> Internal Settings
     settings = Settings(
         time_limit_seconds=request.settings.time_limit_seconds,
         objective_mode=request.settings.objective_mode,
     )
     
+    # 6. Return Model (return internal model)
     return Model(
         jobs=jobs,
         resources=resources,

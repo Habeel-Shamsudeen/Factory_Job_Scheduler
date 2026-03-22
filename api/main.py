@@ -4,9 +4,10 @@ from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from adapter.client_a import client_a_to_model
-from core.errors import InfeasibleError
-from kpi.calculate import calculate_kpis
+from adapter import client_a_to_model
+from core import InfeasibleError
+from kpi import calculate_kpis
+from .visualization import build_text_visualization
 
 from .schemas import (
     AssignmentSchema,
@@ -16,7 +17,7 @@ from .schemas import (
     ScheduleSuccessResponse,
 )
 from .validation_errors import request_validation_exception_handler
-from scheduler.heuristic import heuristic_schedule
+from scheduler import heuristic_schedule
 
 app = FastAPI(
     title="Harmony Job Scheduler API",
@@ -43,8 +44,12 @@ def health_check():
     },
 )
 def create_schedule(request: ScheduleRequest) -> ScheduleSuccessResponse | JSONResponse:
+    # 1. Request Validation -> handled by FastAPI and Pydantic
+
+    # 2. Request to Model -> client_a_to_model (canonical internal model)
     model = client_a_to_model(request)
     try:
+        # 3. Schedule -> heuristic_schedule (build job assignments)
         assignments = heuristic_schedule(model)
     except InfeasibleError as exc:
         return JSONResponse(
@@ -52,7 +57,10 @@ def create_schedule(request: ScheduleRequest) -> ScheduleSuccessResponse | JSONR
             content={"error": "infeasible", "why": exc.reasons},
         )
 
+    # 4. KPIs -> calculate_kpis (calculate KPIs)
     kpis = calculate_kpis(assignments, model)
+
+    # 5. Assignments to Response -> AssignmentSchema (transform assignments to response schema)
     horizon_start = request.horizon.start
     transformed_assignments = [
         AssignmentSchema(
@@ -65,6 +73,16 @@ def create_schedule(request: ScheduleRequest) -> ScheduleSuccessResponse | JSONR
         )
         for assignment in assignments
     ]
+
+    # 6. Visualization -> build_text_visualization (build text visualization)
+    visualization = build_text_visualization(
+        assignments=assignments,
+        model=model,
+        horizon_start=horizon_start,
+    )
+    print(visualization)
+
+    # 7. Return Response -> ScheduleSuccessResponse (return response schema)
     return ScheduleSuccessResponse(
         assignments=transformed_assignments,
         kpis=KPIResponseSchema(
