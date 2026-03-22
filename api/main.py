@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from fastapi import FastAPI, HTTPException
 from fastapi.exceptions import RequestValidationError
 
@@ -5,11 +7,13 @@ from .schemas import (
     ScheduleResponse,
     ScheduleRequest,
     ScheduleSuccessResponse,
+    AssignmentSchema,
 )
 from .validation_errors import request_validation_exception_handler
 from adapter.client_a import client_a_to_model
 from kpi.calculate import calculate_kpis
 from scheduler.mock import schedule_mock
+from scheduler.heuristic import heuristic_schedule
 
 app = FastAPI(
     title="Harmony Job Scheduler API",
@@ -29,13 +33,24 @@ def create_schedule(request: ScheduleRequest) -> ScheduleResponse:
         # step 1: Transform the request payload into a format that can be used by the scheduler
         model = client_a_to_model(request)
         # step 2: Call the scheduler
-        assignments = schedule_mock(model)
+        assignments = heuristic_schedule(model)
         # Step 3: Calculate the KPIs
         kpis = calculate_kpis(assignments, model)
-        # Step 4: return the response
-
+        # Step 4: return the response (scheduler uses minutes from horizon.start)
+        horizon_start = request.horizon.start
+        transformed_assignments = [
+            AssignmentSchema(
+                product=assignment.product,
+                step_index=assignment.step_index,
+                capability=assignment.capability,
+                resource=assignment.resource,
+                start=horizon_start + timedelta(minutes=assignment.start),
+                end=horizon_start + timedelta(minutes=assignment.end),
+            )
+            for assignment in assignments
+        ]
         return ScheduleSuccessResponse(
-            assignments=[],
+            assignments=transformed_assignments,
             kpis=kpis,
         )
     except Exception as e:
