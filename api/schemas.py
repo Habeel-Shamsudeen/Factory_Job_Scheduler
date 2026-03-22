@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Literal, Union, Tuple, List, Dict
+from typing import Dict, List, Literal, Tuple, Union
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 from typing_extensions import Self
@@ -60,7 +60,7 @@ class ProductSchema(BaseModel):
 
 class SettingsSchema(BaseModel):
     time_limit_seconds: int
-    objective_mode: str
+    objective_mode: Literal["min_tardiness"]
 
     @field_validator("time_limit_seconds")
     @classmethod
@@ -106,10 +106,6 @@ class ScheduleRequest(BaseModel):
             for start, end in resource.calendar:
                 if start < self.horizon.start or end > self.horizon.end:
                     raise ValueError("calendar must be in the range of the horizon")
-        # products should be in the range of the horizon
-        for product in self.products:
-            if product.due < self.horizon.start or product.due > self.horizon.end:
-                raise ValueError("due date must be in the range of the horizon")
 
         return self
 

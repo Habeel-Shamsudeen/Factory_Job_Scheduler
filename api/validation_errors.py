@@ -1,6 +1,7 @@
 from typing import Any
 
-from fastapi import Request, status
+from fastapi import Request
+from starlette import status
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -36,6 +37,6 @@ async def request_validation_exception_handler(
     issues = [_issue_from_error(e) for e in exc.errors()]
     payload = {"error": "validation_error", "issues": issues}
     return JSONResponse(
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         content=jsonable_encoder(payload),
     )

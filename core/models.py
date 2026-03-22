@@ -1,6 +1,5 @@
 from dataclasses import dataclass
-from typing import List, Tuple, Dict
-from datetime import datetime
+from typing import Dict, List, Tuple
 
 @dataclass
 class Step:
@@ -35,6 +34,15 @@ class Assignment:
 class Settings:
     time_limit_seconds: int
     objective_mode: str
+
+
+@dataclass
+class KPIResult:
+    tardiness_minutes: int
+    changeover_count: int
+    changeover_minutes: int
+    makespan_minutes: int
+    utilization_pct: Dict[str, int]
 
 
 @dataclass
